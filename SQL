@@ -1,0 +1,149 @@
+
+SELECT
+    ISSUE_KEY
+  , ISSUE_NUMBER
+  , ISSUE_TYPE
+  , SUMMARY
+  , DESCRIPTION
+  , WORK_TYPE
+  , ISSUE_STATUS
+  , PRIORITY
+  , RESOLUTION
+  , PROJECT
+  , PARENT
+  , PARENT_TYPE
+  , GRANDPARENT
+  , GRANDPARENT_TYPE
+  , EPIC
+  , ASSIGNEE_NAME
+  , ASSIGNEE_EMPLID
+  , REPORTER_NAME
+  , REPORTER_EMPLID
+  , CREATOR_NAME
+  , CREATOR_EMPLID
+    FROM
+        (SELECT
+             CAST(DBMS_LOB.SUBSTR(DESCRIPTION, 0, 4000) AS VARCHAR2(4000))                 AS DESCRIPTION
+           , WORK_TYPE
+           , ISSUE_TYPE
+           , SUMMARY
+           , ISSUE_KEY
+           , ISSUE_STATUS
+           , ISSUE_NUMBER
+           , RESOLUTION
+           , PROJECT
+           , CASE WHEN ISSUE_TYPE = 'Epic' THEN ISSUE_NUMBER ELSE PARENT.SOURCE_NUMBER END AS "PARENT"
+           , CASE WHEN ISSUE_TYPE = 'Epic' THEN ISSUE_TYPE ELSE PARENT.SOURCE_TYPE END     AS "PARENT_TYPE"
+           , CASE WHEN ISSUE_TYPE = 'Sub-task' THEN GRANDPARENT.SOURCE_NUMBER END          AS "GRANDPARENT"
+           , CASE WHEN ISSUE_TYPE = 'Sub-task' THEN GRANDPARENT.SOURCE_TYPE END            AS "GRANDPARENT_TYPE"
+           , CASE
+                 WHEN ISSUE_TYPE = 'Epic' THEN ISSUE_NUMBER
+                 ELSE CASE
+                          WHEN ISSUE_TYPE = 'Sub-task' THEN GRANDPARENT.SOURCE_NUMBER
+                          ELSE PARENT.SOURCE_NUMBER END END                                AS "EPIC"
+           , ASSIGNEE_NAME
+           , ASSIGNEE_EMPLID
+           , REPORTER_NAME
+           , REPORTER_EMPLID
+           , CREATOR_NAME
+           , CREATOR_EMPLID
+           , PRIORITY
+            
+             FROM
+                 (
+                     SELECT
+                         J.ID                                                            AS "ISSUE_KEY"
+                       , PK.PROJECT_KEY || '-' || J.ISSUENUM                             AS "ISSUE_NUMBER"
+                       , CASE WHEN I.PNAME = 'Sub Task' THEN 'Sub-task' ELSE I.PNAME END AS "ISSUE_TYPE"
+                       , WORK_TYPE
+                       , S.PNAME                                                         AS "ISSUE_STATUS"
+                       , J.SUMMARY
+                       , J.DESCRIPTION
+                       , JR.PNAME                                                        AS "RESOLUTION"
+                       , P.PNAME                                                         AS "PROJECT"
+                       , PRI.PNAME                                                       AS "PRIORITY"
+                       , CREATOR_VW.EMPLID                                               AS "CREATOR_EMPLID"
+                       , CREATOR_VW.DISPLAY_NAME                                         AS "CREATOR_NAME"
+                       , REPORTER_VW.EMPLID                                              AS "REPORTER_EMPLID"
+                       , REPORTER_VW.DISPLAY_NAME                                        AS "REPORTER_NAME"
+                       , ASSIGNEE_VW.EMPLID                                              AS "ASSIGNEE_EMPLID"
+                       , ASSIGNEE_VW.DISPLAY_NAME                                        AS "ASSIGNEE_NAME"
+                         FROM
+                             J_JIRAISSUE J
+                                 INNER JOIN J_PROJECT P ON (J.PROJECT = P.ID)
+                                 INNER JOIN J_PROJECT_KEY PK ON (P.PKEY = PK.PROJECT_KEY)
+                                 INNER JOIN J_ISSUETYPE I ON (I.ID = J.ISSUETYPE)
+                                 INNER JOIN J_ISSUESTATUS S ON (S.ID = J.ISSUESTATUS)
+                                 LEFT JOIN (SELECT
+                                                CUSTOMVALUE              AS "WORK_TYPE"
+                                              , J_CUSTOMFIELDVALUE.ISSUE AS "ISSUE_KEY"
+                                    
+                                                FROM
+                                                    J_CUSTOMFIELD
+                                            
+                                                        INNER JOIN J_CUSTOMFIELDVALUE
+                                                                   ON J_CUSTOMFIELD.ID = J_CUSTOMFIELDVALUE.CUSTOMFIELD
+                                            
+                                                        INNER JOIN J_CUSTOMFIELDOPTION
+                                                                   ON J_CUSTOMFIELDVALUE.STRINGVALUE = J_CUSTOMFIELDOPTION.ID
+                                    
+                                                WHERE
+                                                    J_CUSTOMFIELD.ID = 12600) WORKTYPE ON (J.ID = WORKTYPE.ISSUE_KEY)
+                                 LEFT JOIN J_RESOLUTION JR ON J.RESOLUTION = JR.ID
+                                 LEFT JOIN J_USER_VW CREATOR_VW ON CREATOR_VW.USER_KEY = J.CREATOR
+                                 LEFT JOIN J_USER_VW REPORTER_VW ON REPORTER_VW.USER_KEY = J.CREATOR
+                                 LEFT JOIN J_USER_VW ASSIGNEE_VW ON ASSIGNEE_VW.USER_KEY = J.CREATOR
+                                 LEFT JOIN J_PRIORITY PRI ON (J.PRIORITY = PRI.ID)
+                 ) CORE
+                     LEFT JOIN (SELECT
+                                    I.*
+                                  , (SELECT
+                                         PROJECT_KEY || '-' || ISSUENUM
+                                         FROM
+                                             J_JIRAISSUE J
+                                  
+                                                 INNER JOIN J_PROJECT P ON (J.PROJECT = P.ID)
+                                  
+                                                 INNER JOIN J_PROJECT_KEY K ON (P.PKEY = K.PROJECT_KEY)
+                          
+                                         WHERE
+                                             J.ID = SOURCE) AS "SOURCE_NUMBER"
+                                  , J_ISSUETYPE.PNAME       AS "SOURCE_TYPE"
+                        
+                                    FROM
+                                        J_ISSUELINK I
+                                            FULL OUTER JOIN J_JIRAISSUE ON (J_JIRAISSUE.ID = I.SOURCE)
+                                            FULL OUTER JOIN J_ISSUETYPE ON (J_JIRAISSUE.ISSUETYPE = J_ISSUETYPE.ID)
+                                    WHERE
+                                        LINKTYPE IN (10100, 10300)
+                 ) PARENT ON (CORE.ISSUE_KEY = PARENT.DESTINATION)
+                     LEFT JOIN (SELECT
+                                    I.*
+                                  , (SELECT
+                                         PROJECT_KEY || '-' || ISSUENUM
+                                         FROM
+                                             J_JIRAISSUE J
+                                  
+                                                 INNER JOIN J_PROJECT P ON (J.PROJECT = P.ID)
+                                  
+                                                 INNER JOIN J_PROJECT_KEY K ON (P.PKEY = K.PROJECT_KEY)
+                          
+                                         WHERE
+                                             J.ID = SOURCE) AS "SOURCE_NUMBER"
+                                  , J_ISSUETYPE.PNAME       AS "SOURCE_TYPE"
+                        
+                                    FROM
+                                        J_ISSUELINK I
+                                            FULL OUTER JOIN J_JIRAISSUE ON (J_JIRAISSUE.ID = I.SOURCE)
+                                            FULL OUTER JOIN J_ISSUETYPE ON (J_JIRAISSUE.ISSUETYPE = J_ISSUETYPE.ID)
+                                    WHERE
+                                        LINKTYPE IN (10100, 10300)
+                 ) GRANDPARENT ON (PARENT.SOURCE = GRANDPARENT.DESTINATION)
+            
+             WHERE
+                  CORE.ISSUE_KEY != 59077
+               OR PARENT.SEQUENCE IS NULL -- accounts for a task with 2 parents.
+        
+        )
+        
+        
